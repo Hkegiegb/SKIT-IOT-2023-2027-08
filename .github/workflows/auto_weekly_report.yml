@@ -1,0 +1,45 @@
+name: Auto Weekly Project Report
+
+on:
+  schedule:
+    - cron: '29 18 * * 4'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install reportlab matplotlib
+
+      - name: Generate weekly report
+        run: |
+          python generate_report.py weekly
+
+      - name: Move report to weekly_reports
+        run: |
+          mkdir -p weekly_reports
+          mv *_Weekly_Progress_Report_Form-3_*.pdf weekly_reports/
+
+      - name: Commit and push report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add weekly_reports/
+          git commit -m "docs: add weekly project report" || echo "No changes to commit"
+          git push
