@@ -10,7 +10,12 @@ pygame.display.set_caption("DADSCS - Drone Swarm Simulation")
 clock = pygame.time.Clock()
 
 # simulation agents
-friendly_drone = FriendlyDrone(100, 100)
+friendly_drones = [
+    FriendlyDrone(100, 100, 3),
+    FriendlyDrone(100, 200, 3.2),
+    FriendlyDrone(150, 250, 4),
+    FriendlyDrone(170, 300, 3.5)
+]
 hostile_drone = HostileDrone(600, 400)
 asset = Asset(400, 300)
 
@@ -23,35 +28,42 @@ while running:
 
     screen.fill((20, 20, 20))
 
-    friendly_drone.chase(hostile_drone)
+    for friendly_drone in friendly_drones:
+        friendly_drone.chase(hostile_drone)
+        friendly_drone.update()
 
-    friendly_drone.update()
-    hostile_drone.update()
+        hostile_drone.update(WIDTH, HEIGHT)
 
     # Update and draw your simulation here
+    
+    for friendly_drone in friendly_drones:
+        pygame.draw.circle(
+            screen,
+            (0, 0, 255),
+            (int(friendly_drone.position.x),
+             int(friendly_drone.position.y)),
+            8
+        )
 
-    pygame.draw.circle(
-        screen,
-        (0, 150, 255),
-        (int(friendly_drone.position.x), int(friendly_drone.position.y)),
-        10
-    )
-
+    # Draw hostile drone
     pygame.draw.circle(
         screen,
         (255, 50, 50),
-        (int(hostile_drone.position.x), int(hostile_drone.position.y)),
+        (int(hostile_drone.position.x),
+         int(hostile_drone.position.y)),
         10
     )
 
+    # Draw asset
     pygame.draw.circle(
         screen,
         (0, 255, 0),
-        (int(asset.position.x), int(asset.position.y)),
+        (int(asset.position.x),
+         int(asset.position.y)),
         12
     )
 
     pygame.display.flip()
     clock.tick(60)
 
-pygame.quite()
+pygame.quit()
