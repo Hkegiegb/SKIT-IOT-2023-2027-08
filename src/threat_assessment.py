@@ -17,3 +17,17 @@ def calculate_direction_alignment(drone, asset):
 
     cos_angle = drone.velocity.dot(toward_asset) / (speed * distance)
     return max(-1.0, min(1.0, cos_angle))
+
+
+def calculate_tti(drone, asset):
+    distance = calculate_distance(drone, asset)
+    if distance == 0:
+        return 0.0
+
+    toward_asset = asset.position - drone.position
+    closing_speed = drone.velocity.dot(toward_asset) / distance
+
+    if closing_speed <= 0:
+        return float('inf')
+
+    return distance / closing_speed
