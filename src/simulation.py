@@ -1,5 +1,6 @@
 import pygame
 from agents import FriendlyDrone, HostileDrone, Asset
+from sensing import find_neighbors
 pygame.init()
 
 #simulation window
@@ -26,13 +27,16 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
+    if not running:
+        break
+
     screen.fill((20, 20, 20))
 
     for friendly_drone in friendly_drones:
-        friendly_drone.chase(hostile_drone)
-        friendly_drone.update()
-
-        hostile_drone.update(WIDTH, HEIGHT)
+          neighbors = find_neighbors(friendly_drones, friendly_drone, 50)
+          friendly_drone.chase(hostile_drone)
+          friendly_drone.update()
+    hostile_drone.update(WIDTH, HEIGHT)
 
     # Update and draw your simulation here
     
