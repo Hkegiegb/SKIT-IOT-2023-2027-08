@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+import math
 import pygame
 from agents import HostileDrone, Asset
 
 
-@dataclass
+@dataclass(slots=True)
 class ThreatReport:
     drone: HostileDrone
     distance: float
@@ -19,34 +20,34 @@ def calculate_distance(drone, asset):
 
 def calculate_direction_alignment(drone, asset):
     toward_asset = asset.position - drone.position
-    distance = toward_asset.length()
-    speed = drone.velocity.length()
+    dist_sq = toward_asset.length_squared()
+    speed_sq = drone.velocity.length_squared()
 
-    if distance == 0 or speed == 0:
+    if dist_sq == 0 or speed_sq == 0:
         return 0.0
 
-    cos_angle = drone.velocity.dot(toward_asset) / (speed * distance)
+    dot = drone.velocity.dot(toward_asset)
+    cos_angle = dot / math.sqrt(speed_sq * dist_sq)
     return max(-1.0, min(1.0, cos_angle))
 
 
 def calculate_tti(drone, asset):
-    distance = calculate_distance(drone, asset)
-    if distance == 0:
+    toward_asset = asset.position - drone.position
+    dist_sq = toward_asset.length_squared()
+    if dist_sq == 0:
         return 0.0
 
-    toward_asset = asset.position - drone.position
-    closing_speed = drone.velocity.dot(toward_asset) / distance
-
-    if closing_speed <= 0:
+    dot = drone.velocity.dot(toward_asset)
+    if dot <= 0:
         return float('inf')
 
-    return distance / closing_speed
+    return dist_sq / dot
 
 
 def get_nearest_threat(drones, asset):
     if not drones:
         return None
-    return min(drones, key=lambda d: calculate_distance(d, asset))
+    return min(drones, key=lambda d: d.position.distance_squared_to(asset.position))
 
 
 def calculate_cpa(drone, asset):
@@ -56,31 +57,39 @@ def calculate_cpa(drone, asset):
     if speed_sq == 0:
         return 0.0, toward_asset.length()
 
-    t_cpa = toward_asset.dot(drone.velocity) / speed_sq
-    if t_cpa <= 0:
+    dot = toward_asset.dot(drone.velocity)
+    if dot <= 0:
         return 0.0, toward_asset.length()
 
-    closest_pos = drone.position + drone.velocity * t_cpa
-    return t_cpa, closest_pos.distance_to(asset.position)
+    t_cpa = dot / speed_sq
+    dist_sq = toward_asset.length_squared()
+    d_cpa = math.sqrt(max(0.0, dist_sq - (dot * dot) / speed_sq))
+    return t_cpa, d_cpa
 
 
 def calculate_threat_score(drone, asset, max_range=800.0):
-    dist = calculate_distance(drone, asset)
-    if dist <= 0:
+    toward_asset = asset.position - drone.position
+    dist_sq = toward_asset.length_squared()
+    if dist_sq <= 0:
         return 100.0
 
+    dist = math.sqrt(dist_sq)
     dist_factor = max(0.0, 1.0 - (dist / max_range))
-    toward_asset = asset.position - drone.position
-    closing_speed = drone.velocity.dot(toward_asset) / dist
 
-    if closing_speed <= 0:
+    speed_sq = drone.velocity.length_squared()
+    if speed_sq == 0:
         return round(dist_factor * 15.0, 2)
 
-    align_factor = max(0.0, calculate_direction_alignment(drone, asset))
-    tti = dist / closing_speed
+    dot = drone.velocity.dot(toward_asset)
+    if dot <= 0:
+        return round(dist_factor * 15.0, 2)
+
+    speed = math.sqrt(speed_sq)
+    align_factor = max(0.0, min(1.0, dot / (speed * dist)))
+    tti = dist_sq / dot
     tti_factor = 1.0 / (1.0 + (tti / 60.0))
 
-    _, d_cpa = calculate_cpa(drone, asset)
+    d_cpa = math.sqrt(max(0.0, dist_sq - (dot * dot) / speed_sq))
     cpa_factor = max(0.0, 1.0 - (d_cpa / 120.0))
 
     score = (
@@ -93,25 +102,51 @@ def calculate_threat_score(drone, asset, max_range=800.0):
     return round(score, 2)
 
 
-def assess_threat(drone, asset):
-    return ThreatReport(
-        drone=drone,
-        distance=calculate_distance(drone, asset),
-        alignment=calculate_direction_alignment(drone, asset),
-        tti=calculate_tti(drone, asset),
-        cpa_distance=calculate_cpa(drone, asset)[1],
-        threat_score=calculate_threat_score(drone, asset),
-    )
+def assess_threat(drone, asset, max_range=800.0):
+    toward_asset = asset.position - drone.position
+    dist_sq = toward_asset.length_squared()
+    if dist_sq <= 0:
+        return ThreatReport(drone, 0.0, 0.0, 0.0, 0.0, 100.0)
+
+    dist = math.sqrt(dist_sq)
+    dist_factor = max(0.0, 1.0 - (dist / max_range))
+    speed_sq = drone.velocity.length_squared()
+
+    if speed_sq == 0:
+        return ThreatReport(drone, dist, 0.0, float('inf'), dist, round(dist_factor * 15.0, 2))
+
+    dot = drone.velocity.dot(toward_asset)
+    speed = math.sqrt(speed_sq)
+    alignment = max(-1.0, min(1.0, dot / (speed * dist)))
+
+    if dot <= 0:
+        return ThreatReport(drone, dist, alignment, float('inf'), dist, round(dist_factor * 15.0, 2))
+
+    tti = dist_sq / dot
+    t_cpa = dot / speed_sq
+    d_cpa = math.sqrt(max(0.0, dist_sq - (dot * dot) / speed_sq))
+
+    align_factor = max(0.0, alignment)
+    tti_factor = 1.0 / (1.0 + (tti / 60.0))
+    cpa_factor = max(0.0, 1.0 - (d_cpa / 120.0))
+
+    score = (
+        0.35 * tti_factor +
+        0.30 * dist_factor +
+        0.20 * align_factor +
+        0.15 * cpa_factor
+    ) * 100.0
+
+    return ThreatReport(drone, dist, alignment, tti, d_cpa, round(score, 2))
 
 
-def assess_threats(drones, asset):
-    reports = [assess_threat(drone, asset) for drone in drones]
+def assess_threats(drones, asset, max_range=800.0):
+    reports = [assess_threat(drone, asset, max_range) for drone in drones]
     reports.sort(key=lambda r: r.threat_score, reverse=True)
     return reports
 
 
-def get_most_urgent_threat(drones, asset):
+def get_most_urgent_threat(drones, asset, max_range=800.0):
     if not drones:
         return None
-    reports = assess_threats(drones, asset)
-    return reports[0].drone
+    return max(drones, key=lambda d: calculate_threat_score(d, asset, max_range))
