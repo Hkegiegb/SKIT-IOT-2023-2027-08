@@ -13,6 +13,50 @@ class InitialThreatScore:
     cpa_factor: float
     total_score: float
 
+    @property
+    def score(self) -> float:
+        return self.total_score
+
+    @property
+    def threat_score(self) -> float:
+        return self.total_score
+
+    def __float__(self) -> float:
+        return float(self.total_score)
+
+    def __lt__(self, other):
+        val = other.total_score if isinstance(other, InitialThreatScore) else other
+        return self.total_score < val
+
+    def __le__(self, other):
+        val = other.total_score if isinstance(other, InitialThreatScore) else other
+        return self.total_score <= val
+
+    def __gt__(self, other):
+        val = other.total_score if isinstance(other, InitialThreatScore) else other
+        return self.total_score > val
+
+    def __ge__(self, other):
+        val = other.total_score if isinstance(other, InitialThreatScore) else other
+        return self.total_score >= val
+
+    def __eq__(self, other):
+        val = other.total_score if isinstance(other, InitialThreatScore) else other
+        return self.total_score == val
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def to_dict(self):
+        return {
+            "proximity_factor": self.proximity_factor,
+            "closing_velocity_factor": self.closing_velocity_factor,
+            "alignment_factor": self.alignment_factor,
+            "tti_factor": self.tti_factor,
+            "cpa_factor": self.cpa_factor,
+            "total_score": self.total_score,
+        }
+
 
 @dataclass(slots=True)
 class ThreatReport:
@@ -217,8 +261,11 @@ def assess_threat(drone, asset, max_range=800.0, max_closing_speed=5.0):
     )
 
 
-def calculate_initial_threat_score(drone, asset, max_range=800.0, max_closing_speed=5.0):
+def initial_threat_score(drone, asset, max_range=800.0, max_closing_speed=5.0):
     return assess_threat(drone, asset, max_range, max_closing_speed).initial_score
+
+
+calculate_initial_threat_score = initial_threat_score
 
 
 def assess_threats(drones, asset, max_range=800.0):
