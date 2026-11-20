@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List, Dict, Union, Optional
 import math
 import pygame
 from agents import HostileDrone, Asset
@@ -69,6 +70,25 @@ class ThreatReport:
     closing_velocity: float = 0.0
     proximity_factor: float = 0.0
     initial_score: InitialThreatScore | None = None
+
+    @property
+    def target(self) -> HostileDrone:
+        return self.drone
+
+    def bidding_utility(
+        self,
+        friendly_drone,
+        gamma: float = 0.2,
+        mu: float = 0.1,
+        sensing_radius: float = 800.0,
+    ) -> float:
+        return compute_bidding_utility(
+            friendly_drone,
+            self,
+            gamma=gamma,
+            mu=mu,
+            sensing_radius=sensing_radius,
+        )
 
 
 def calculate_distance(drone, asset):
@@ -196,6 +216,10 @@ def calculate_threat_score(drone, asset, max_range=800.0):
     return round(score, 2)
 
 
+def calculate_normalized_threat_score(drone, asset, max_range=800.0) -> float:
+    return round(calculate_threat_score(drone, asset, max_range) / 100.0, 4)
+
+
 def assess_threat(drone, asset, max_range=800.0, max_closing_speed=5.0):
     toward_asset = asset.position - drone.position
     dist_sq = toward_asset.length_squared()
@@ -268,10 +292,74 @@ def initial_threat_score(drone, asset, max_range=800.0, max_closing_speed=5.0):
 calculate_initial_threat_score = initial_threat_score
 
 
-def assess_threats(drones, asset, max_range=800.0):
+def assess_threats(drones, asset, max_range=800.0) -> List[ThreatReport]:
     reports = [assess_threat(drone, asset, max_range) for drone in drones]
     reports.sort(key=lambda r: r.threat_score, reverse=True)
     return reports
+
+
+def batch_threat_scores(
+    drones: List[HostileDrone],
+    asset: Asset,
+    max_range: float = 800.0,
+    normalize: bool = False,
+) -> Dict[HostileDrone, float]:
+    scores = {}
+    for d in drones:
+        score = calculate_threat_score(d, asset, max_range)
+        setattr(d, "threat_score", score)
+        scores[d] = score / 100.0 if normalize else score
+    return scores
+
+
+def assess_threats_multi_asset(
+    drones: List[HostileDrone],
+    assets: List[Asset],
+    max_range: float = 800.0,
+) -> List[ThreatReport]:
+    if not assets:
+        return []
+    reports = []
+    for d in drones:
+        best_report = max(
+            (assess_threat(d, a, max_range) for a in assets),
+            key=lambda r: r.threat_score,
+        )
+        reports.append(best_report)
+    reports.sort(key=lambda r: r.threat_score, reverse=True)
+    return reports
+
+
+def compute_bidding_utility(
+    friendly_drone,
+    threat: Union[HostileDrone, ThreatReport],
+    asset: Optional[Asset] = None,
+    gamma: float = 0.2,
+    mu: float = 0.1,
+    sensing_radius: float = 800.0,
+) -> float:
+    if isinstance(threat, ThreatReport):
+        raw_score = threat.threat_score
+        target_pos = threat.drone.position
+    else:
+        target_pos = threat.position
+        if hasattr(threat, "threat_score"):
+            raw_score = getattr(threat, "threat_score")
+        elif asset is not None:
+            raw_score = calculate_threat_score(threat, asset)
+        else:
+            raw_score = 50.0
+
+    te = raw_score / 100.0 if raw_score > 1.0 else raw_score
+    dist = friendly_drone.position.distance_to(target_pos)
+    range_norm = sensing_radius if sensing_radius > 0 else 800.0
+    dist_penalty = gamma * min(1.0, dist / range_norm)
+
+    ebatt = getattr(friendly_drone, "battery", 1.0)
+    emax = getattr(friendly_drone, "max_battery", 1.0)
+    batt_penalty = mu * max(0.0, 1.0 - (ebatt / emax)) if emax > 0 else 0.0
+
+    return max(0.0001, round(te - dist_penalty - batt_penalty, 4))
 
 
 def get_most_urgent_threat(drones, asset, max_range=800.0):
